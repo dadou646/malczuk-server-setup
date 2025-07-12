@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    environment:
+      - TZ=Europe/Paris
+      - WEBPASSWORD=changeme
+    volumes:
+      - pihole_config:/etc/pihole
+      - dnsmasq_config:/etc/dnsmasq.d
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "80:80"
+    restart: always
+    cap_add:
+      - NET_ADMIN
+
+  homeassistant:
+    container_name: homeassistant
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      - homeassistant_config:/config
+      - /etc/localtime:/etc/localtime:ro
+    restart: always
+    privileged: true
+    network_mode: host
+
+  nextcloud:
+    image: nextcloud
+    container_name: nextcloud
+    ports:
+      - "8080:80"
+    volumes:
+      - nextcloud_data:/var/www/html
+    restart: always
+
+  wireguard:
+    container_name: wireguard
+    image: lscr.io/linuxserver/wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Paris
+    volumes:
+      - wireguard_config:/config
+      - /lib/modules:/lib/modules
+    ports:
+      - "51820:51820/udp"
+    restart: always
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: always
+
+volumes:
+  pihole_config:
+  dnsmasq_config:
+  homeassistant_config:
+  nextcloud_data:
+  wireguard_config:
+  ollama_data:
