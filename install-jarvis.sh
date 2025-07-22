@@ -121,7 +121,19 @@ done
 EOF
 chmod +x /usr/local/bin/tri_photos.sh
 
-# Cron (ou service inotify) à ajouter plus tard pour détection disque ou synchro périodique
+# === 8. Lancement Home Assistant avec port exposé ===
+echo "🏠 Lancement de Home Assistant avec port 8123 exposé..."
+docker rm -f homeassistant || true
+
+docker run -d \
+  --name homeassistant \
+  --restart unless-stopped \
+  --privileged \
+  -v /mnt/data/homeassistant:/config \
+  -v /etc/localtime:/etc/localtime:ro \
+  --device /dev/serial/by-id/usb-0658_0200-if00 \
+  -p 8123:8123 \
+  ghcr.io/home-assistant/home-assistant:stable
 
 # === Fin ===
 echo "✅ Jarvis est opérationnel."
@@ -130,3 +142,4 @@ echo "🧠 IA locale : Mistral (Ollama) + Whisper pour la reconnaissance vocale.
 echo "🗣 Synthèse vocale prête pour intégrer la voix de Nathalia (mère de Marie)."
 echo "🔊 Contrôle automatique du volume Yamaha RX-V477 pendant les réponses."
 echo "📷 Tri automatique des photos iCloud prêt – classement par année/mois, doublons à filtrer."
+echo "🌐 Accès Home Assistant : http://$(hostname -I | awk '{print $1}'):8123"
