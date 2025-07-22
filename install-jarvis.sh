@@ -95,7 +95,7 @@ systemctl enable jarvis.service --now
 
 # === 7. Automatisation iCloud + tri IA photos ===
 echo "📸 Configuration de la synchronisation iCloud et du tri IA..."
-mkdir -p /mnt/photos_icloud /mnt/sources_hdd /mnt/Malczuk_Backup
+mkdir -p /mnt/photos_icloud /mnt/sources_hdd /mnt/Malczuk_Backup /mnt/data/nextcloud/data/admin/files/Photos
 
 # Montage iCloud avec icloudpd pour davidmalczuk@icloud.com
 docker rm -f icloudpd || true
@@ -107,17 +107,18 @@ docker run -d --name icloudpd \
 # Script de tri par date + suppression IA des doublons (à venir)
 cat << 'EOF' > /usr/local/bin/tri_photos.sh
 #!/bin/bash
-SOURCE="/mnt/photos_icloud"
 DEST="/srv/photos"
-
 mkdir -p "$DEST"
-find "$SOURCE" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
-  year=$(date -r "$file" +%Y)
-  month=$(date -r "$file" +%m)
-  mkdir -p "$DEST/$year/$year-$month"
-  filename=$(basename "$file")
-  cp -u "$file" "$DEST/$year/$year-$month/$filename"
-  # Suppression IA des doublons à ajouter ici
+
+for SOURCE in /mnt/photos_icloud /mnt/data/nextcloud/data/admin/files/Photos; do
+  find "$SOURCE" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
+    year=$(date -r "$file" +%Y)
+    month=$(date -r "$file" +%m)
+    mkdir -p "$DEST/$year/$year-$month"
+    filename=$(basename "$file")
+    cp -u "$file" "$DEST/$year/$year-$month/$filename"
+    # Suppression IA des doublons à ajouter ici
+  done
 done
 EOF
 chmod +x /usr/local/bin/tri_photos.sh
@@ -142,5 +143,6 @@ echo "🎙 Mot-clé : 'Jarvis' – écoute en continu via micro."
 echo "🧠 IA locale : Mistral (Ollama) + Whisper pour la reconnaissance vocale."
 echo "🗣 Synthèse vocale prête pour intégrer la voix de Nathalia (mère de Marie)."
 echo "🔊 Contrôle automatique du volume Yamaha RX-V477 pendant les réponses."
-echo "📷 Tri automatique des photos iCloud prêt – classement par année/mois, doublons à filtrer."
+echo "📷 Tri automatique des photos iCloud & Nextcloud prêt – classement par année/mois, doublons à filtrer."
 echo "🌐 Accès Home Assistant : http://$(hostname -I | awk '{print $1}'):8123"
+echo "☁️ Accès Nextcloud : http://$(hostname -I | awk '{print $1}'):8080"
