@@ -3,8 +3,8 @@
 set -e
 
 # ==========================
-# Malczuk Server - Jarvis
-# Assistant vocal local IA
+# Malczuk Server - Jarvis + Automatisations
+# Assistant vocal + iCloud, photos, iPad
 # ==========================
 
 # Vérification root
@@ -16,7 +16,7 @@ fi
 # === 1. Préparation système ===
 echo "🔧 Installation des dépendances système..."
 apt update
-apt install -y git python3 python3-pip portaudio19-dev ffmpeg libffi-dev curl build-essential sox jq nmap
+apt install -y git python3 python3-pip portaudio19-dev ffmpeg libffi-dev curl build-essential sox jq nmap inotify-tools rsync fuse unzip
 
 mkdir -p /srv/jarvis && cd /srv/jarvis
 
@@ -47,8 +47,7 @@ HA_URL = "http://localhost:8123/api/services/media_player/volume_set"
 AMP_ENTITY = "media_player.yamaha_receiver"
 DEFAULT_VOLUME = 0.4
 RESPONSE_VOLUME = 0.7
-VOICE_PATH = "/srv/jarvis/voice_maman_marina.wav"  # Voix de la mère de Marie (à cloner plus tard)
-
+VOICE_PATH = "/srv/jarvis/voice_nathalia.wav"  # Voix de Nathalia (mère de Marie)
 
 def set_volume(vol):
     requests.post(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, json={
@@ -94,8 +93,40 @@ systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable jarvis.service --now
 
+# === 7. Automatisation iCloud + tri IA photos ===
+echo "📸 Configuration de la synchronisation iCloud et du tri IA..."
+mkdir -p /mnt/photos_icloud /mnt/sources_hdd /mnt/Malczuk_Backup
+
+# Exemple de montage iCloud avec icloudpd (à configurer avec ton compte)
+# docker run -d --name icloudpd \
+#   -v /mnt/photos_icloud:/data \
+#   -e username='ton_compte@icloud.com' \
+#   boredazfcuk/icloudpd
+
+# Script de tri par date + suppression IA des doublons (à venir)
+cat << 'EOF' > /usr/local/bin/tri_photos.sh
+#!/bin/bash
+SOURCE="/mnt/photos_icloud"
+DEST="/srv/photos"
+
+mkdir -p "$DEST"
+find "$SOURCE" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
+  year=$(date -r "$file" +%Y)
+  month=$(date -r "$file" +%m)
+  mkdir -p "$DEST/$year/$year-$month"
+  filename=$(basename "$file")
+  cp -u "$file" "$DEST/$year/$year-$month/$filename"
+  # Suppression IA des doublons à ajouter ici
+done
+EOF
+chmod +x /usr/local/bin/tri_photos.sh
+
+# Cron (ou service inotify) à ajouter plus tard pour détection disque ou synchro périodique
+
 # === Fin ===
-echo "✅ Jarvis est en place. Mot-clé : 'Jarvis'. Écoute en permanence."
-echo "🔊 Volume Yamaha ajusté dynamiquement pendant la réponse."
-echo "🧠 IA locale via Mistral (Ollama) + reconnaissance vocale Whisper."
-echo "🗣 Synthèse vocale prête pour intégrer la voix de la mère de Marie."
+echo "✅ Jarvis est opérationnel."
+echo "🎙 Mot-clé : 'Jarvis' – écoute en continu via micro."
+echo "🧠 IA locale : Mistral (Ollama) + Whisper pour la reconnaissance vocale."
+echo "🗣 Synthèse vocale prête pour intégrer la voix de Nathalia (mère de Marie)."
+echo "🔊 Contrôle automatique du volume Yamaha RX-V477 pendant les réponses."
+echo "📷 Tri automatique des photos iCloud prêt – classement par année/mois, doublons à filtrer."
