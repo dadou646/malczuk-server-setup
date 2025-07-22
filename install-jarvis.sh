@@ -16,7 +16,7 @@ fi
 # === 1. Préparation système ===
 echo "🔧 Installation des dépendances système..."
 apt update
-apt install -y git python3 python3-pip portaudio19-dev ffmpeg libffi-dev curl build-essential sox jq
+apt install -y git python3 python3-pip portaudio19-dev ffmpeg libffi-dev curl build-essential sox jq nmap
 
 mkdir -p /srv/jarvis && cd /srv/jarvis
 
@@ -47,6 +47,8 @@ HA_URL = "http://localhost:8123/api/services/media_player/volume_set"
 AMP_ENTITY = "media_player.yamaha_receiver"
 DEFAULT_VOLUME = 0.4
 RESPONSE_VOLUME = 0.7
+VOICE_PATH = "/srv/jarvis/voice_maman_marina.wav"  # Voix de la mère de Marie (à cloner plus tard)
+
 
 def set_volume(vol):
     requests.post(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, json={
@@ -96,3 +98,4 @@ systemctl enable jarvis.service --now
 echo "✅ Jarvis est en place. Mot-clé : 'Jarvis'. Écoute en permanence."
 echo "🔊 Volume Yamaha ajusté dynamiquement pendant la réponse."
 echo "🧠 IA locale via Mistral (Ollama) + reconnaissance vocale Whisper."
+echo "🗣 Synthèse vocale prête pour intégrer la voix de la mère de Marie."
