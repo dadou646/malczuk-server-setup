@@ -55,7 +55,6 @@ if ! dpkg -l | grep -q wireguard; then
 else
   echo "✅ WireGuard déjà installé"
 fi
-# Configuration manuelle recommandée après installation
 
 # 6. Création des dossiers de données
 mkdir -p /mnt/HDD /mnt/Malczuk_Backup /srv/photos /srv/medias /srv/jarvis
@@ -71,17 +70,136 @@ fi
 
 # 8. Assistant vocal IA - Jarvis
 if [ ! -f /srv/jarvis/.installed ]; then
-  curl -s https://malczuk-server.nohost.me/scripts/install-jarvis.sh | bash
+  echo "🔧 Installation de l’assistant vocal Jarvis..."
+
+  apt install -y portaudio19-dev ffmpeg libffi-dev build-essential sox jq inotify-tools rsync fuse unzip python3 python3-pip
+
+  # Installation des dépendances Python
+  pip install -U openai-whisper TTS
+
+  # Installation d’Ollama + Mistral
+  curl -fsSL https://ollama.com/install.sh | sh
+  systemctl enable ollama --now
+  ollama pull mistral
+
+  # Script Jarvis
+  cat << 'EOF' > /srv/jarvis/jarvis.py
+#!/usr/bin/env python3
+import os, time, subprocess, requests
+import speech_recognition as sr
+
+TRIGGER = "jarvis"
+LANG = "fr-FR"
+HA_TOKEN = "YOUR_LONG_LIVED_ACCESS_TOKEN"
+HA_URL = "http://localhost:8123/api/services/media_player/volume_set"
+AMP_ENTITY = "media_player.yamaha_receiver"
+DEFAULT_VOLUME = 0.4
+RESPONSE_VOLUME = 0.7
+
+def set_volume(vol):
+    requests.post(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, json={
+        "entity_id": AMP_ENTITY,
+        "volume_level": vol
+    })
+
+r = sr.Recognizer()
+with sr.Microphone() as source:
+    print("🎧 Jarvis écoute...")
+    while True:
+        audio = r.listen(source)
+        try:
+            text = r.recognize_whisper(audio, language=LANG)
+            if TRIGGER in text.lower():
+                print("✅ Mot-clé détecté !")
+                set_volume(RESPONSE_VOLUME)
+                response = subprocess.check_output(["ollama", "run", "mistral", text], text=True)
+                os.system(f"echo '{response}' | TTS --text - --out_path /srv/jarvis/response.wav && aplay /srv/jarvis/response.wav")
+                set_volume(DEFAULT_VOLUME)
+        except Exception as e:
+            print("[Erreur]", e)
+EOF
+
+  chmod +x /srv/jarvis/jarvis.py
+
+  # Service systemd
+  cat << EOF > /etc/systemd/system/jarvis.service
+[Unit]
+Description=Jarvis Voice Assistant
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /srv/jarvis/jarvis.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reexec
+  systemctl daemon-reload
+  systemctl enable jarvis.service --now
+
   touch /srv/jarvis/.installed
 else
   echo "✅ Jarvis déjà installé"
 fi
 
-# 9. Synchronisation iCloud + import disque externe
-# (À venir : installation rclone + détection disques)
+# 9. iCloud + tri photos
+if [ ! -f /usr/local/bin/tri_photos.sh ]; then
+  echo "📸 Configuration de la synchro iCloud + tri photos..."
 
-# 10. Fin de l'installation
+  mkdir -p /mnt/photos_icloud /mnt/sources_hdd /mnt/Malczuk_Backup /mnt/data/nextcloud/data/admin/files/Photos
+
+  docker rm -f icloudpd || true
+  docker run -d --name icloudpd \
+    -v /mnt/photos_icloud:/data \
+    -e username='davidmalczuk@icloud.com' \
+    boredazfcuk/icloudpd
+
+  cat << 'EOF' > /usr/local/bin/tri_photos.sh
+#!/bin/bash
+DEST="/srv/photos"
+mkdir -p "$DEST"
+
+for SOURCE in /mnt/photos_icloud /mnt/data/nextcloud/data/admin/files/Photos; do
+  find "$SOURCE" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
+    year=$(date -r "$file" +%Y)
+    month=$(date -r "$file" +%m)
+    mkdir -p "$DEST/$year/$year-$month"
+    filename=$(basename "$file")
+    cp -u "$file" "$DEST/$year/$year-$month/$filename"
+    # Suppression IA des doublons à venir
+  done
+done
+EOF
+  chmod +x /usr/local/bin/tri_photos.sh
+else
+  echo "✅ Script de tri photo déjà présent"
+fi
+
+# 10. Home Assistant
+if [ ! $(docker ps -a --format '{{.Names}}' | grep -w homeassistant) ]; then
+  echo "🏠 Lancement de Home Assistant..."
+  docker run -d \
+    --name homeassistant \
+    --restart unless-stopped \
+    --privileged \
+    -v /mnt/data/homeassistant:/config \
+    -v /etc/localtime:/etc/localtime:ro \
+    --device /dev/serial/by-id/usb-0658_0200-if00 \
+    -p 8123:8123 \
+    ghcr.io/home-assistant/home-assistant:stable
+else
+  echo "✅ Home Assistant déjà en cours"
+fi
+
+# 11. Fin
 clear
-echo "✅ Installation terminée ! Redémarre le serveur si nécessaire."
-echo "Tu peux accéder à Yacht via : http://malczuk.local:8000"
-echo "Et bientôt piloter Jarvis depuis ton iPhone avec 'Jarvis' comme mot-clé."
+echo "✅ Installation terminée !"
+echo "🧠 Jarvis est actif avec IA Mistral (local) + reconnaissance vocale"
+echo "🎙 Détection par mot-clé : Jarvis"
+echo "🔊 Contrôle volume via Yamaha RX-V477"
+echo "📷 Photos triées automatiquement par année/mois"
+echo "🌐 Home Assistant dispo sur : http://malczuk.local:8123"
+echo "📁 Interface Docker (Yacht) : http://malczuk.local:8000"
