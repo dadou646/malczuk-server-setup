@@ -97,11 +97,11 @@ systemctl enable jarvis.service --now
 echo "📸 Configuration de la synchronisation iCloud et du tri IA..."
 mkdir -p /mnt/photos_icloud /mnt/sources_hdd /mnt/Malczuk_Backup
 
-# Exemple de montage iCloud avec icloudpd (à configurer avec ton compte)
-# docker run -d --name icloudpd \
-#   -v /mnt/photos_icloud:/data \
-#   -e username='ton_compte@icloud.com' \
-#   boredazfcuk/icloudpd
+# Montage iCloud avec icloudpd pour davidmalczuk@icloud.com
+docker run -d --name icloudpd \
+  -v /mnt/photos_icloud:/data \
+  -e username='davidmalczuk@icloud.com' \
+  boredazfcuk/icloudpd
 
 # Script de tri par date + suppression IA des doublons (à venir)
 cat << 'EOF' > /usr/local/bin/tri_photos.sh
