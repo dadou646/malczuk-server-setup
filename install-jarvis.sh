@@ -98,6 +98,7 @@ echo "📸 Configuration de la synchronisation iCloud et du tri IA..."
 mkdir -p /mnt/photos_icloud /mnt/sources_hdd /mnt/Malczuk_Backup
 
 # Montage iCloud avec icloudpd pour davidmalczuk@icloud.com
+docker rm -f icloudpd || true
 docker run -d --name icloudpd \
   -v /mnt/photos_icloud:/data \
   -e username='davidmalczuk@icloud.com' \
