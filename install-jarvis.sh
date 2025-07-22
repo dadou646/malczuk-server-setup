@@ -137,6 +137,26 @@ docker run -d \
   -p 8123:8123 \
   ghcr.io/home-assistant/home-assistant:stable
 
+# === 9. Intégration Spotify au système audio ===
+echo "🎵 Configuration Spotify Connect avec malczuk-audio..."
+docker rm -f malczuk-audio || true
+docker run -d \
+  --name malczuk-audio \
+  --restart unless-stopped \
+  --device /dev/snd \
+  -e SPOTIFY_NAME="malczuk-audio" \
+  -e SPOTIFY_BITRATE=320 \
+  -e SPOTIFY_USERNAME="dadoumotocross@hotmail.fr" \
+  -e SPOTIFY_PASSWORD="h4aQbkPLQ5EneSM" \
+  -p 4000:4000 \
+  --net host \
+  --privileged \
+  --volume /var/run/dbus:/var/run/dbus \
+  --volume /etc/machine-id:/etc/machine-id \
+  --volume /run/user/1000/pulse:/run/user/1000/pulse \
+  --env PULSE_SERVER=unix:/run/user/1000/pulse/native \
+  ghcr.io/dtcooper/raspotify
+
 # === Fin ===
 echo "✅ Jarvis est opérationnel."
 echo "🎙 Mot-clé : 'Jarvis' – écoute en continu via micro."
@@ -146,3 +166,4 @@ echo "🔊 Contrôle automatique du volume Yamaha RX-V477 pendant les réponses.
 echo "📷 Tri automatique des photos iCloud & Nextcloud prêt – classement par année/mois, doublons à filtrer."
 echo "🌐 Accès Home Assistant : http://$(hostname -I | awk '{print $1}'):8123"
 echo "☁️ Accès Nextcloud : http://$(hostname -I | awk '{print $1}'):8080"
+echo "🎵 Spotify Connect disponible sur l'ampli : 'malczuk-audio'"
