@@ -2,74 +2,86 @@
 
 set -e
 
-### Variables de configuration ###
-SERVER_USER="$(whoami)"
-EXTERNAL_DRIVE_LABEL="Malczuk_Backup"
-INSTALL_DIR="/opt/malczuk-server"
-REPO_URL="https://github.com/dadou646/malczuk-server-setup.git"
+# =============================
+# Malczuk Server - install.sh
+# =============================
+# Serveur personnel domotique sécurisé et automatisé
+# Auteur : David Malczuk
+# ================================================
 
-### Fonctions ###
-log() {
-    echo -e "[\e[34mINFO\e[0m] $1"
-}
+# Vérification root
+if [ "$EUID" -ne 0 ]; then
+  echo "❌ Ce script doit être exécuté en tant que root (sudo)."
+  exit 1
+fi
 
-install_package() {
-    if ! dpkg -s "$1" >/dev/null 2>&1; then
-        log "Installation de $1..."
-        apt-get install -y "$1"
-    else
-        log "$1 est déjà installé."
-    fi
-}
+# 1. Mises à jour de base
+apt update && apt upgrade -y
+apt install -y curl git sudo gnupg lsb-release ca-certificates software-properties-common
 
-### Prérequis ###
-log "Mise à jour du système..."
-apt-get update && apt-get upgrade -y
-
-log "Installation des dépendances..."
-install_package curl
-install_package git
-install_package docker.io
-install_package docker-compose
-install_package avahi-daemon
-install_package sudo
-install_package libasound2
-install_package wireguard
-
-usermod -aG docker "$SERVER_USER"
-
-### Clone du dépôt ###
-if [ ! -d "$INSTALL_DIR" ]; then
-    log "Clonage du dépôt..."
-    git clone "$REPO_URL" "$INSTALL_DIR"
+# 2. Installation de Docker + Docker Compose
+if ! command -v docker &> /dev/null; then
+  curl -fsSL https://get.docker.com | bash
+  usermod -aG docker $SUDO_USER
 else
-    log "Déjà cloné. Mise à jour du dépôt..."
-    cd "$INSTALL_DIR" && git pull
+  echo "✅ Docker déjà installé"
 fi
 
-### Installation des composants via Docker ###
-log "Lancement de Docker Compose (sans YunoHost)..."
-cd "$INSTALL_DIR" && docker-compose -f docker-compose.no-yunohost.yml up -d
-
-### Assistant vocal JARVIS ###
-if [ ! -f "$INSTALL_DIR/scripts/install-jarvis.sh" ]; then
-    log "Script Jarvis manquant !"
+if ! command -v docker-compose &> /dev/null; then
+  curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  chmod +x /usr/local/bin/docker-compose
 else
-    bash "$INSTALL_DIR/scripts/install-jarvis.sh"
+  echo "✅ Docker Compose déjà installé"
 fi
 
-### Synchronisation iCloud + Disque externe ###
-log "Configuration de la synchronisation iCloud..."
-if [ -f "$INSTALL_DIR/scripts/sync-icloud.sh" ]; then
-    bash "$INSTALL_DIR/scripts/sync-icloud.sh"
-fi
-
-log "Vérification du disque externe pour sauvegarde automatique..."
-if mount | grep "$EXTERNAL_DRIVE_LABEL" >/dev/null; then
-    bash "$INSTALL_DIR/scripts/sync-external-disk.sh"
+# 3. Yacht (interface Docker)
+if [ ! $(docker ps -a --format '{{.Names}}' | grep -w yacht) ]; then
+  docker volume create yacht
+  curl -s https://get.yacht.sh | bash
 else
-    log "Disque $EXTERNAL_DRIVE_LABEL non connecté. En attente de connexion future."
+  echo "✅ Yacht déjà installé"
 fi
 
-log "Installation terminée. Tu peux accéder à Home Assistant, Nextcloud, etc. via le domaine : http://malczuk-server.nohost.me"
-log "Redémarre ton serveur si tu viens d'ajouter un nouveau groupe (Docker, sudo...) pour appliquer les droits."
+# 4. Avahi (résolution mDNS .local)
+if ! systemctl is-active --quiet avahi-daemon; then
+  curl -s https://raw.githubusercontent.com/dadou646/malczuk-server-setup/main/install-avahi.sh | bash
+else
+  echo "✅ Avahi déjà actif"
+fi
+
+# 5. WireGuard VPN (accès distant sécurisé)
+if ! dpkg -l | grep -q wireguard; then
+  apt install -y wireguard wireguard-tools
+else
+  echo "✅ WireGuard déjà installé"
+fi
+# Configuration manuelle recommandée après installation
+
+# 6. Création des dossiers de données
+mkdir -p /mnt/HDD /mnt/Malczuk_Backup /srv/photos /srv/medias /srv/jarvis
+chown -R $SUDO_USER:$SUDO_USER /srv
+
+# 7. Déploiement docker (sans YunoHost par défaut)
+if [ ! -f /srv/.docker_setup_done ]; then
+  curl -s https://raw.githubusercontent.com/dadou646/malczuk-server-setup/main/install-no-yunohost.sh | bash
+  touch /srv/.docker_setup_done
+else
+  echo "✅ Déploiement docker déjà effectué"
+fi
+
+# 8. Assistant vocal IA - Jarvis
+if [ ! -f /srv/jarvis/.installed ]; then
+  curl -s https://malczuk-server.nohost.me/scripts/install-jarvis.sh | bash
+  touch /srv/jarvis/.installed
+else
+  echo "✅ Jarvis déjà installé"
+fi
+
+# 9. Synchronisation iCloud + import disque externe
+# (À venir : installation rclone + détection disques)
+
+# 10. Fin de l'installation
+clear
+echo "✅ Installation terminée ! Redémarre le serveur si nécessaire."
+echo "Tu peux accéder à Yacht via : http://malczuk.local:8000"
+echo "Et bientôt piloter Jarvis depuis ton iPhone avec 'Jarvis' comme mot-clé."
