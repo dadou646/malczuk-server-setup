@@ -1,11 +1,10 @@
 #!/bin/bash
-
 set -e
 
 # =============================
 # Malczuk Server - install.sh
 # =============================
-# Serveur personnel domotique sécurisé et automatisé
+# Serveur personnel domotique sécurisé, intelligent et automatisé
 # Auteur : David Malczuk
 # ================================================
 
@@ -14,6 +13,9 @@ if [ "$EUID" -ne 0 ]; then
   echo "❌ Ce script doit être exécuté en tant que root (sudo)."
   exit 1
 fi
+
+# === Définition des variables ===
+DATA_DISK="/mnt/data"
 
 # 1. Mises à jour de base
 apt update && apt upgrade -y
@@ -58,7 +60,6 @@ if [ ! -f /etc/wireguard/malczuk-vpn.conf ]; then
   mkdir -p /srv/wireguard
   cd /srv/wireguard
 
-  # Génération clés serveur et client
   wg genkey | tee server_private.key | wg pubkey > server_public.key
   wg genkey | tee client_private.key | wg pubkey > client_public.key
 
@@ -68,9 +69,7 @@ if [ ! -f /etc/wireguard/malczuk-vpn.conf ]; then
   CLIENT_PUB=$(cat client_public.key)
 
   SERVER_IP="192.168.1.31"
-  VPN_SUBNET="10.8.0.0/24"
 
-  # === Création conf serveur
   cat <<EOF > /etc/wireguard/malczuk-vpn.conf
 [Interface]
 Address = 10.8.0.1/24
@@ -78,7 +77,6 @@ ListenPort = 51820
 PrivateKey = $SERVER_PRIV
 SaveConfig = true
 
-# Client autorisé
 [Peer]
 PublicKey = $CLIENT_PUB
 AllowedIPs = 10.8.0.2/32
@@ -89,7 +87,6 @@ EOF
   systemctl enable wg-quick@malczuk-vpn
   systemctl start wg-quick@malczuk-vpn
 
-  # === Génération client
   cat <<EOF > /srv/wireguard/malczuk-client.conf
 [Interface]
 PrivateKey = $CLIENT_PRIV
@@ -107,165 +104,47 @@ EOF
 
   qrencode -t ansiutf8 < /srv/wireguard/malczuk-client.conf
 
-  echo "✅ VPN WireGuard configuré sur interface : malczuk-vpn"
-  echo "📁 Fichier client prêt : /srv/wireguard/malczuk-client.conf"
+  echo "✅ VPN WireGuard configuré"
+  echo "📁 Fichier client : /srv/wireguard/malczuk-client.conf"
 
-  # === UFW : pare-feu ultra-sécurisé
-  echo "🔥 Configuration du pare-feu (UFW)..."
+  echo "🔥 Configuration pare-feu (ufw)"
   ufw default deny incoming
   ufw default allow outgoing
   ufw allow 51820/udp comment 'WireGuard VPN'
   ufw allow in on lo
   ufw --force enable
 else
-  echo "✅ WireGuard déjà configuré (malczuk-vpn)"
+  echo "✅ WireGuard déjà configuré"
 fi
 
+# 6. Préparation des répertoires
+mkdir -p $DATA_DISK/nextcloud $DATA_DISK/homeassistant /mnt/Malczuk_Backup
+chown -R $SUDO_USER:$SUDO_USER $DATA_DISK
 
-# 6. Création des dossiers de données
-mkdir -p /mnt/HDD /mnt/Malczuk_Backup /srv/photos /srv/medias /srv/jarvis
-chown -R $SUDO_USER:$SUDO_USER /srv
+# 7. Recréation propre de Nextcloud (sur HDD)
+docker rm -f nextcloud || true
+docker run -d \
+  --name nextcloud \
+  --restart unless-stopped \
+  -v $DATA_DISK/nextcloud:/var/www/html \
+  -p 8080:80 \
+  nextcloud
 
-# 7. Déploiement docker (sans YunoHost par défaut)
-if [ ! -f /srv/.docker_setup_done ]; then
-  curl -s https://raw.githubusercontent.com/dadou646/malczuk-server-setup/main/install-no-yunohost.sh | bash
-  touch /srv/.docker_setup_done
-else
-  echo "✅ Déploiement docker déjà effectué"
-fi
+# 8. Recréation propre de Home Assistant (sur HDD)
+docker rm -f homeassistant || true
+docker run -d \
+  --name homeassistant \
+  --restart unless-stopped \
+  --privileged \
+  -v $DATA_DISK/homeassistant:/config \
+  -v /etc/localtime:/etc/localtime:ro \
+  --device /dev/serial/by-id/usb-0658_0200-if00 \
+  -p 8123:8123 \
+  ghcr.io/home-assistant/home-assistant:stable
 
-# 8. Assistant vocal IA - Jarvis
-if [ ! -f /srv/jarvis/.installed ]; then
-  echo "🔧 Installation de l’assistant vocal Jarvis..."
-
-  apt install -y portaudio19-dev ffmpeg libffi-dev build-essential sox jq inotify-tools rsync fuse unzip python3 python3-pip
-
-  # Installation des dépendances Python
-  pip install -U openai-whisper TTS
-
-  # Installation d’Ollama + Mistral
-  curl -fsSL https://ollama.com/install.sh | sh
-  systemctl enable ollama --now
-  ollama pull mistral
-
-  # Script Jarvis
-  cat << 'EOF' > /srv/jarvis/jarvis.py
-#!/usr/bin/env python3
-import os, time, subprocess, requests
-import speech_recognition as sr
-
-TRIGGER = "jarvis"
-LANG = "fr-FR"
-HA_TOKEN = "YOUR_LONG_LIVED_ACCESS_TOKEN"
-HA_URL = "http://localhost:8123/api/services/media_player/volume_set"
-AMP_ENTITY = "media_player.yamaha_receiver"
-DEFAULT_VOLUME = 0.4
-RESPONSE_VOLUME = 0.7
-
-def set_volume(vol):
-    requests.post(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, json={
-        "entity_id": AMP_ENTITY,
-        "volume_level": vol
-    })
-
-r = sr.Recognizer()
-with sr.Microphone() as source:
-    print("🎧 Jarvis écoute...")
-    while True:
-        audio = r.listen(source)
-        try:
-            text = r.recognize_whisper(audio, language=LANG)
-            if TRIGGER in text.lower():
-                print("✅ Mot-clé détecté !")
-                set_volume(RESPONSE_VOLUME)
-                response = subprocess.check_output(["ollama", "run", "mistral", text], text=True)
-                os.system(f"echo '{response}' | TTS --text - --out_path /srv/jarvis/response.wav && aplay /srv/jarvis/response.wav")
-                set_volume(DEFAULT_VOLUME)
-        except Exception as e:
-            print("[Erreur]", e)
-EOF
-
-  chmod +x /srv/jarvis/jarvis.py
-
-  # Service systemd
-  cat << EOF > /etc/systemd/system/jarvis.service
-[Unit]
-Description=Jarvis Voice Assistant
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/python3 /srv/jarvis/jarvis.py
-Restart=always
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  systemctl daemon-reexec
-  systemctl daemon-reload
-  systemctl enable jarvis.service --now
-
-  touch /srv/jarvis/.installed
-else
-  echo "✅ Jarvis déjà installé"
-fi
-
-# 9. iCloud + tri photos
-if [ ! -f /usr/local/bin/tri_photos.sh ]; then
-  echo "📸 Configuration de la synchro iCloud + tri photos..."
-
-  mkdir -p /mnt/photos_icloud /mnt/sources_hdd /mnt/Malczuk_Backup /mnt/data/nextcloud/data/admin/files/Photos
-
-  docker rm -f icloudpd || true
-  docker run -d --name icloudpd \
-    -v /mnt/photos_icloud:/data \
-    -e username='davidmalczuk@icloud.com' \
-    boredazfcuk/icloudpd
-
-  cat << 'EOF' > /usr/local/bin/tri_photos.sh
-#!/bin/bash
-DEST="/srv/photos"
-mkdir -p "$DEST"
-
-for SOURCE in /mnt/photos_icloud /mnt/data/nextcloud/data/admin/files/Photos; do
-  find "$SOURCE" -type f \( -iname "*.jpg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
-    year=$(date -r "$file" +%Y)
-    month=$(date -r "$file" +%m)
-    mkdir -p "$DEST/$year/$year-$month"
-    filename=$(basename "$file")
-    cp -u "$file" "$DEST/$year/$year-$month/$filename"
-    # Suppression IA des doublons à venir
-  done
-done
-EOF
-  chmod +x /usr/local/bin/tri_photos.sh
-else
-  echo "✅ Script de tri photo déjà présent"
-fi
-
-# 10. Home Assistant
-if [ ! $(docker ps -a --format '{{.Names}}' | grep -w homeassistant) ]; then
-  echo "🏠 Lancement de Home Assistant..."
-  docker run -d \
-    --name homeassistant \
-    --restart unless-stopped \
-    --privileged \
-    -v /mnt/data/homeassistant:/config \
-    -v /etc/localtime:/etc/localtime:ro \
-    --device /dev/serial/by-id/usb-0658_0200-if00 \
-    -p 8123:8123 \
-    ghcr.io/home-assistant/home-assistant:stable
-else
-  echo "✅ Home Assistant déjà en cours"
-fi
-
-# 11. Fin
+# 9. Fin
 clear
-echo "✅ Installation terminée !"
-echo "🧠 Jarvis est actif avec IA Mistral (local) + reconnaissance vocale"
-echo "🎙 Détection par mot-clé : Jarvis"
-echo "🔊 Contrôle volume via Yamaha RX-V477"
-echo "📷 Photos triées automatiquement par année/mois"
-echo "🌐 Home Assistant dispo sur : http://malczuk.local:8123"
-echo "📁 Interface Docker (Yacht) : http://malczuk.local:8000"
+echo "✅ Serveur Malczuk installé et sécurisé !"
+echo "🌐 Nextcloud : http://malczuk.local:8080"
+echo "🏠 Home Assistant : http://malczuk.local:8123"
+echo "🔐 Accès distant via VPN (WireGuard uniquement)"
