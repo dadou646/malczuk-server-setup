@@ -49,12 +49,78 @@ else
   echo "✅ Avahi déjà actif"
 fi
 
-# 5. WireGuard VPN (accès distant sécurisé)
-if ! dpkg -l | grep -q wireguard; then
-  apt install -y wireguard wireguard-tools
+# 5. WireGuard VPN ultra-sécurisé (malczuk-vpn)
+if [ ! -f /etc/wireguard/malczuk-vpn.conf ]; then
+  echo "🔐 Installation et configuration de WireGuard (malczuk-vpn)..."
+
+  apt install -y wireguard ufw qrencode
+
+  mkdir -p /srv/wireguard
+  cd /srv/wireguard
+
+  # Génération clés serveur et client
+  wg genkey | tee server_private.key | wg pubkey > server_public.key
+  wg genkey | tee client_private.key | wg pubkey > client_public.key
+
+  SERVER_PRIV=$(cat server_private.key)
+  SERVER_PUB=$(cat server_public.key)
+  CLIENT_PRIV=$(cat client_private.key)
+  CLIENT_PUB=$(cat client_public.key)
+
+  SERVER_IP="192.168.1.31"
+  VPN_SUBNET="10.8.0.0/24"
+
+  # === Création conf serveur
+  cat <<EOF > /etc/wireguard/malczuk-vpn.conf
+[Interface]
+Address = 10.8.0.1/24
+ListenPort = 51820
+PrivateKey = $SERVER_PRIV
+SaveConfig = true
+
+# Client autorisé
+[Peer]
+PublicKey = $CLIENT_PUB
+AllowedIPs = 10.8.0.2/32
+EOF
+
+  chmod 600 /etc/wireguard/malczuk-vpn.conf
+
+  systemctl enable wg-quick@malczuk-vpn
+  systemctl start wg-quick@malczuk-vpn
+
+  # === Génération client
+  cat <<EOF > /srv/wireguard/malczuk-client.conf
+[Interface]
+PrivateKey = $CLIENT_PRIV
+Address = 10.8.0.2/32
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = $SERVER_PUB
+Endpoint = ${SERVER_IP}:51820
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+EOF
+
+  chmod 600 /srv/wireguard/malczuk-client.conf
+
+  qrencode -t ansiutf8 < /srv/wireguard/malczuk-client.conf
+
+  echo "✅ VPN WireGuard configuré sur interface : malczuk-vpn"
+  echo "📁 Fichier client prêt : /srv/wireguard/malczuk-client.conf"
+
+  # === UFW : pare-feu ultra-sécurisé
+  echo "🔥 Configuration du pare-feu (UFW)..."
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow 51820/udp comment 'WireGuard VPN'
+  ufw allow in on lo
+  ufw --force enable
 else
-  echo "✅ WireGuard déjà installé"
+  echo "✅ WireGuard déjà configuré (malczuk-vpn)"
 fi
+
 
 # 6. Création des dossiers de données
 mkdir -p /mnt/HDD /mnt/Malczuk_Backup /srv/photos /srv/medias /srv/jarvis
