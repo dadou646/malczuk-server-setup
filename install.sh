@@ -150,25 +150,36 @@ echo "🏠 Home Assistant : http://malczuk.local:8123"
 echo "🔐 Accès distant via VPN (WireGuard uniquement)"
 
 # ======================================================
-# ## Tri automatique des photos Nextcloud
-# Ajouté automatiquement le 2025-07-26 05:53:15
+# ## Tri automatique des photos iCloud + Nextcloud
+# Ajouté automatiquement le 2025-07-26
 # ======================================================
 
-# Script de tri des photos
 cat << 'EOF' > /usr/local/bin/tri_photos.sh
 #!/bin/bash
 DEST="/srv/photos"
-NCPATH="/mnt/data/nextcloud/data"
+ICLOUD_SOURCE="/mnt/photos_icloud"
+NC_BASE="/mnt/data/nextcloud/data"
 
-for PHOTOS_DIR in "$NCPATH"/*/files/Photos; do
-  [ -d "$PHOTOS_DIR" ] || continue
-  find "$PHOTOS_DIR" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
+# Fonction pour traiter un dossier source
+process_photos() {
+  SOURCE="$1"
+  [ -d "$SOURCE" ] || return
+
+  find "$SOURCE" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
     year=$(date -r "$file" +%Y)
     month=$(date -r "$file" +%m)
     mkdir -p "$DEST/$year/$year-$month"
     filename=$(basename "$file")
     cp -u "$file" "$DEST/$year/$year-$month/$filename"
   done
+}
+
+# 🔁 Traiter iCloud
+process_photos "$ICLOUD_SOURCE"
+
+# 🔁 Traiter tous les utilisateurs Nextcloud
+for PHOTOS_DIR in "$NC_BASE"/*/files/Photos; do
+  process_photos "$PHOTOS_DIR"
 done
 EOF
 
