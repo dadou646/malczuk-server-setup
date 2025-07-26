@@ -148,3 +148,31 @@ echo "✅ Serveur Malczuk installé et sécurisé !"
 echo "🌐 Nextcloud : http://malczuk.local:8080"
 echo "🏠 Home Assistant : http://malczuk.local:8123"
 echo "🔐 Accès distant via VPN (WireGuard uniquement)"
+
+# ======================================================
+# ## Tri automatique des photos Nextcloud
+# Ajouté automatiquement le 2025-07-26 05:53:15
+# ======================================================
+
+# Script de tri des photos
+cat << 'EOF' > /usr/local/bin/tri_photos.sh
+#!/bin/bash
+DEST="/srv/photos"
+NCPATH="/mnt/data/nextcloud/data"
+
+for PHOTOS_DIR in "$NCPATH"/*/files/Photos; do
+  [ -d "$PHOTOS_DIR" ] || continue
+  find "$PHOTOS_DIR" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" \) | while read file; do
+    year=$(date -r "$file" +%Y)
+    month=$(date -r "$file" +%m)
+    mkdir -p "$DEST/$year/$year-$month"
+    filename=$(basename "$file")
+    cp -u "$file" "$DEST/$year/$year-$month/$filename"
+  done
+done
+EOF
+
+chmod +x /usr/local/bin/tri_photos.sh
+
+# Ajout du cron (si absent)
+( crontab -l 2>/dev/null | grep -v tri_photos ; echo "*/10 * * * * /usr/local/bin/tri_photos.sh" ) | crontab -
